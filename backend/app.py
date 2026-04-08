@@ -1,6 +1,6 @@
 import os
 import joblib
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ from utils.gpt_logic import get_gpt_explanation
 load_dotenv()
 app = Flask(__name__)
 
-# [RENDER UPDATE] CORS is mandatory for the Chrome extension to talk to the Render URL
+# [RENDER UPDATE] CORS is mandatory for the Chrome extension
 CORS(app) 
 
 # 2. Database setup
@@ -30,7 +30,7 @@ class FlaggedEmail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender = db.Column(db.String(150))
     score = db.Column(db.Integer)
-    explanation = db.Column(db.Text) # Matches dashboard.html usage
+    explanation = db.Column(db.Text) 
     status = db.Column(db.String(100))
     confidence = db.Column(db.String(50), default="High")
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
@@ -42,27 +42,34 @@ model_spam = None
 def load_models():
     global model_spam
     try:
+        print(f"🔍 Searching for model at: {MODEL_PATH}")
         if os.path.exists(MODEL_PATH):
             model_spam = joblib.load(MODEL_PATH)
             print("✅ ML Model (email_spam.pkl) loaded successfully.")
         else:
-            print(f"❌ Model not found at {MODEL_PATH}")
+            print(f"❌ Model not found. Files in /models: {os.listdir(os.path.join(basedir, 'models')) if os.path.exists(os.path.join(basedir, 'models')) else 'Folder missing'}")
     except Exception as e:
         print(f"❌ Model load error: {e}")
 
 # Initialize database and model loading automatically
 with app.app_context():
-    db.create_all() # This recreates the .db file you deleted
+    db.create_all() 
     load_models()
 
 # 5. Routes
+
 @app.route('/')
 def home():
+    """Redirects base URL to the Dashboard."""
+    return render_template('dashboard.html', logs=FlaggedEmail.query.order_by(FlaggedEmail.timestamp.desc()).limit(50).all())
+
+@app.route('/status')
+def status():
+    """API Status endpoint for monitoring."""
     return jsonify({
         "status": "PhishGuard Hybrid Engine Online",
         "xai_engine": "Groq Llama-3",
-        "deployment": "Render Cloud",
-        "endpoints": ["/analyze", "/dashboard"]
+        "deployment": "Render Cloud"
     })
 
 @app.route('/analyze', methods=['POST'])
@@ -84,7 +91,6 @@ def analyze():
 
     # ---- ML inference ----
     try:
-        # Predict probability for the positive class (phishing/spam)
         prob_spam = model_spam.predict_proba([ml_input])[0][1]
         score = int(prob_spam * 100)
     except Exception as e:
@@ -96,21 +102,21 @@ def analyze():
 
     # ---- Hybrid decision logic ----
     if "appears safe" in explanation.lower():
-        status = "AI Verified Safe"
+        status_text = "AI Verified Safe"
         final_score = min(score, 15)
         confidence = "AI Verified"
     elif score > 80:
-        status = "Phishing Detected (High Match)"
+        status_text = "Phishing Detected (High Match)"
         final_score = score
         confidence = "High"
     else:
         threat_keywords = ["suspicious", "phishing", "malicious", "mismatch", "fake", "unsafe"]
         if any(kw in explanation.lower() for kw in threat_keywords):
-            status = "AI Verified Threat"
+            status_text = "AI Verified Threat"
             final_score = max(score, 85)
             confidence = "AI Verified"
         else:
-            status = "AI Verified Safe"
+            status_text = "AI Verified Safe"
             final_score = min(score, 15)
             confidence = "AI Verified"
 
@@ -119,8 +125,8 @@ def analyze():
         new_entry = FlaggedEmail(
             sender=sender_id,
             score=final_score,
-            explanation=explanation, # Ensure this maps correctly to dashboard
-            status=status,
+            explanation=explanation,
+            status=status_text,
             confidence=confidence
         )
         db.session.add(new_entry)
@@ -133,13 +139,13 @@ def analyze():
         "sender": sender_id,
         "score": final_score,
         "explanation": explanation,
-        "status": status,
+        "status": status_text,
         "confidence": confidence
     })
 
 @app.route('/dashboard')
 def dashboard():
-    # [RENDER UPDATE] Fetch logs directly from DB so data persists after restart
+    """Legacy route for the dashboard."""
     db_logs = FlaggedEmail.query.order_by(FlaggedEmail.timestamp.desc()).limit(50).all()
     return render_template('dashboard.html', logs=db_logs)
 
