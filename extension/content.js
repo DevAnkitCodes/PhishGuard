@@ -8,17 +8,14 @@ const API_URL = `${BASE_URL}/analyze`;
 
 /**
  * Injects the PhishGuard button into the Gmail toolbar.
- * Targets both the Inbox list view and the individual Email view.
  */
 function injectButton() {
-    // Target common Gmail toolbar containers (.amH, .nk, .adC, .G-atb)
     const navContainer = document.querySelector('.amH, .nk, .adC, .G-atb');
     
     if (!navContainer) return;
 
     const existingBtn = document.querySelector('.phishguard-btn');
 
-    // Handle button persistence during Gmail UI swaps
     if (existingBtn) {
         if (existingBtn.parentElement !== navContainer.parentNode) {
             existingBtn.remove();
@@ -36,7 +33,7 @@ function injectButton() {
         <span>Analyze It</span>
     `;
 
-    // Professional UI Styling matching Google's Design Language
+    // Professional UI Styling
     Object.assign(btn.style, {
         backgroundColor: "#2563eb",
         color: "white",
@@ -57,17 +54,14 @@ function injectButton() {
         transition: "background-color 0.2s"
     });
 
-    // Interaction Effects
     btn.onmouseover = () => btn.style.backgroundColor = "#1d4ed8";
     btn.onmouseout = () => btn.style.backgroundColor = "#2563eb";
 
-    // Injection before navigation arrows
     navContainer.parentNode.insertBefore(btn, navContainer);
 }
 
 /**
  * Event Listener for the Analyze button.
- * Scrapes email body and sender info to send to the Flask Backend.
  */
 document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.phishguard-btn');
@@ -79,27 +73,32 @@ document.addEventListener('click', async (e) => {
     const btnText = btn.querySelector('span');
     const originalText = btnText.innerText;
     
-    // UI Feedback: Loading state
     btnText.innerText = "Analyzing...";
     btn.disabled = true;
     btn.style.opacity = "0.8";
 
     try {
-        // Scrape Gmail DOM for content
+        // --- SENDER EXTRACTION LOGIC ---
+        // Look for Gmail's sender elements (gD class contains the email in the 'email' attribute)
+        const senderElement = document.querySelector('.gD');
+        let senderEmail = "Unknown Sender";
+
+        if (senderElement) {
+            senderEmail = senderElement.getAttribute('email') || senderElement.innerText;
+        }
+
         const emailBody = document.querySelector('.a3s, .adn, .ii.gt');
-        const senderInfo = document.querySelector('.gD, .iw .gD, [email]');
 
         if (!emailBody) {
-            alert("❌ Analysis Failed: Please make sure the email is fully open and visible.");
+            alert("❌ Analysis Failed: Please make sure the email is fully open.");
             return;
         }
 
         const payload = {
             content: emailBody.innerText.trim(),
-            sender: senderInfo ? (senderInfo.getAttribute('email') || senderInfo.innerText) : "Unknown Sender"
+            sender: senderEmail // Sends the extracted email address
         };
 
-        // REST API call to Render Backend
         const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -110,31 +109,25 @@ document.addEventListener('click', async (e) => {
 
         const data = await response.json();
         
-        // HYBRID VERDICT LOGIC: Checks both score and AI-generated status
         const isPhishing = data.status.toLowerCase().includes('phishing') || 
                            data.status.toLowerCase().includes('threat');
         
         const verdict = isPhishing ? '⚠️ PHISHING DETECTED' : '✅ SECURE';
         
-        // Final Alert Report
-        alert(`🛡️ PHISHGUARD REPORT\n\nScore: ${data.score}%\nVerdict: ${verdict}\n\nReason: ${data.explanation}`);
+        alert(`🛡️ PHISHGUARD REPORT\n\nSender ID: ${data.sender}\nScore: ${data.score}%\nVerdict: ${verdict}\n\nReason: ${data.explanation}`);
 
     } catch (error) {
         console.error("PhishGuard Error:", error);
-        // Inform user about Render's "Cold Start" (Spin-up time)
-        alert("❌ Connection Error: The PhishGuard cloud engine is unreachable. If this is the first run, the server may be 'waking up'—please try again in 30 seconds.");
+        alert("❌ Connection Error: Cloud engine unreachable. Server may be 'waking up'—please try again in 30s.");
     } finally {
-        // UI Restoration
         btnText.innerText = originalText;
         btn.disabled = false;
         btn.style.opacity = "1";
     }
 });
 
-// Dynamic Monitoring for Single Page App (SPA) navigation
 const observer = new MutationObserver(injectButton);
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Initialization
 injectButton();
 setInterval(injectButton, 2000);
