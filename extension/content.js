@@ -1,8 +1,8 @@
 // ============================================================
-//  PHISHGUARD AI - GMAIL CONTENT SCRIPT (Render Version)
+//  PHISHGUARD AI - GMAIL CONTENT SCRIPT
 // ============================================================
 
-// 🔁 REPLACE THIS URL with your actual Render backend URL provided by the Render Dashboard
+// 🔁 FIXED URL: Points to your active Render instance
 const BASE_URL = "https://phishguard-q77g.onrender.com"; 
 const API_URL = `${BASE_URL}/analyze`;
 
@@ -10,17 +10,16 @@ const API_URL = `${BASE_URL}/analyze`;
  * Injects the PhishGuard button into the Gmail toolbar.
  */
 function injectButton() {
+    // Targets the standard Gmail toolbar areas
     const navContainer = document.querySelector('.amH, .nk, .adC, .G-atb');
-    
     if (!navContainer) return;
 
     const existingBtn = document.querySelector('.phishguard-btn');
-
     if (existingBtn) {
         if (existingBtn.parentElement !== navContainer.parentNode) {
             existingBtn.remove();
         } else {
-            return; 
+            return;
         }
     }
 
@@ -33,7 +32,7 @@ function injectButton() {
         <span>Analyze It</span>
     `;
 
-    // Professional UI Styling
+    // Professional Styling
     Object.assign(btn.style, {
         backgroundColor: "#2563eb",
         color: "white",
@@ -61,7 +60,28 @@ function injectButton() {
 }
 
 /**
- * Event Listener for the Analyze button.
+ * Extracts the sender's email address using a multi-step fallback strategy.
+ */
+function getSenderEmail() {
+    // 1. Look for the sender element in the currently open email
+    const senderElem = document.querySelector('.gD');
+    if (senderElem) {
+        const emailAttr = senderElem.getAttribute('email');
+        if (emailAttr) return emailAttr;
+
+        // Fallback: Use Regex to extract email from text like "Name <email@domain.com>"
+        const text = senderElem.innerText;
+        const match = text.match(/[^\s<]+@[^\s>]+/);
+        return match ? match[0] : text;
+    }
+
+    // 2. Fallback: Check for any element with an 'email' attribute in the active view
+    const fallbackElem = document.querySelector('[email]');
+    return fallbackElem ? fallbackElem.getAttribute('email') : "Unknown Sender";
+}
+
+/**
+ * Click handler for the PhishGuard button.
  */
 document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.phishguard-btn');
@@ -78,27 +98,20 @@ document.addEventListener('click', async (e) => {
     btn.style.opacity = "0.8";
 
     try {
-        // --- SENDER EXTRACTION LOGIC ---
-        // Look for Gmail's sender elements (gD class contains the email in the 'email' attribute)
-        const senderElement = document.querySelector('.gD');
-        let senderEmail = "Unknown Sender";
-
-        if (senderElement) {
-            senderEmail = senderElement.getAttribute('email') || senderElement.innerText;
-        }
-
+        const senderEmail = getSenderEmail();
         const emailBody = document.querySelector('.a3s, .adn, .ii.gt');
 
         if (!emailBody) {
-            alert("❌ Analysis Failed: Please make sure the email is fully open.");
+            alert("❌ Analysis Failed: Please make sure the email is fully open and visible.");
             return;
         }
 
         const payload = {
             content: emailBody.innerText.trim(),
-            sender: senderEmail // Sends the extracted email address
+            sender: senderEmail
         };
 
+        // Send to Render Backend
         const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -114,11 +127,12 @@ document.addEventListener('click', async (e) => {
         
         const verdict = isPhishing ? '⚠️ PHISHING DETECTED' : '✅ SECURE';
         
-        alert(`🛡️ PHISHGUARD REPORT\n\nSender ID: ${data.sender}\nScore: ${data.score}%\nVerdict: ${verdict}\n\nReason: ${data.explanation}`);
+        // Final Pop-up Report
+        alert(`🛡️ PHISHGUARD REPORT\n\nSender: ${data.sender}\nScore: ${data.score}%\nVerdict: ${verdict}\n\nReason: ${data.explanation}`);
 
     } catch (error) {
         console.error("PhishGuard Error:", error);
-        alert("❌ Connection Error: Cloud engine unreachable. Server may be 'waking up'—please try again in 30s.");
+        alert("❌ Connection Error: Cloud engine unreachable. If this is the first run, the server may be 'waking up'—please try again in 30s.");
     } finally {
         btnText.innerText = originalText;
         btn.disabled = false;
@@ -126,8 +140,10 @@ document.addEventListener('click', async (e) => {
     }
 });
 
+// Watch for navigation changes in Gmail
 const observer = new MutationObserver(injectButton);
 observer.observe(document.body, { childList: true, subtree: true });
 
+// Initial injection
 injectButton();
 setInterval(injectButton, 2000);
