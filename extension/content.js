@@ -3,7 +3,7 @@
 // ============================================================
 
 // 🔁 REPLACE THIS URL with your actual Render backend URL provided by the Render Dashboard
-const BASE_URL = "https://your-app-name.onrender.com"; 
+const BASE_URL = "https://phishguard-q77g.onrender.com"; 
 const API_URL = `${BASE_URL}/analyze`;
 
 /**
