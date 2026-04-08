@@ -27,6 +27,6 @@
   "host_permissions": [
     "https://mail.google.com/*",
     "http://127.0.0.1:5000/*",
-    "https://your-app-name.onrender.com/*"
+    "https://phishguard-q77g.onrender.com*"
   ]
 }
